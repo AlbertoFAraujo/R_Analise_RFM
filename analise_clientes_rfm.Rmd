@@ -1,0 +1,360 @@
+---
+message: false
+author: "Alberto Araujo"
+date: "2024-04-08"
+output:
+  html_document: 
+    theme: cosmo
+    fig_width: 12
+  message: FALSE
+title: "Segmentação de Clientes com base em análise RFM(Recência, Frequência e Valor
+  Monetário)"
+editor_options: 
+  chunk_output_type: inline
+---
+
+**Objetivo:** Realizar a análise de cliente pelo método RFM :
+
+-   **Recência:** quão recente um cliente fez a compra;
+
+-   **Frequência:** com que frequência um cliente faz a compra;
+
+-   **Valor Monetário:** quanto dinheiro um cliente gasta em compras.
+
+De acordo com essas métricas, é possível segmentar os clientes em grupos para entender quais deles compram muitas coisas com frequência, que compram poucas coisas, mas frequentemente, e que não compram nada há muito tempo.
+
+**Link do dataset:** Online Retail II - UCI Machine Learning Repository
+
+------------------------------------------------------------------------
+
+```{r}
+# Ajustar as casas decimais
+options(scipen = 999, digits = 4)
+
+# Definir um espelho de CRAN
+options(repos = "http://cran.rstudio.com/")
+```
+
+### 1. Importação da base de dados e bibliotecas
+
+Esta seção apresenta a importando das bibliotecas necessárias para manipulações e tratamento dos dados e também a importação do arquivo excel (.xls) da base de dados.
+
+```{r eval=FALSE, message=FALSE, warning=FALSE, include=FALSE}
+library(dplyr)
+
+# Lista dos pacotes necessários
+pacotes <- c('tidyverse', 'ggplot2', 'caret', 'plotly',
+             'readxl', 'rfm', 'stats','factoextra','plyr')
+
+# Verifica se NÃO está instalado, se for verdadeiro
+# Instala e carrega o pacote
+pacotes %>% 
+  lapply(function(pacote){
+    if (!require(pacote, character.only = TRUE)) {
+      install.packages(pacote)
+      library(pacote, character.only = TRUE)
+    }
+  })
+
+```
+
+```{r}
+# Verificar os pacotes instalados
+list(search())
+```
+
+```{r}
+# Carregar os dados da planilha
+plan1 <- read_excel('online+retail+ii/online_retail_II.xlsx', sheet = 'Year 2009-2010')
+plan2 <- read_excel('online+retail+ii/online_retail_II.xlsx', sheet = 'Year 2010-2011')
+df <- rbind(plan1, plan2)
+```
+
+### Definição das variáveis
+
+-   InvoiceNo: Número da fatura. Nominal. Um número integral de 6 dígitos atribuído exclusivamente a cada transação. Se esse código começar com a letra 'c', ele indica um cancelamento;
+
+-   StockCode: Código do produto (item). Nominal. Um número integral de 5 dígitos atribuído exclusivamente a cada produto distinto;
+
+-   Description: Nome do produto (item);
+
+-   Quantity: As quantidades de cada produto (item) por transação. Numérico;
+
+-   InvoiceDate: Data e hora invictas. Numérico. O dia e a hora em que uma transação foi gerada;
+
+-   UnitPrice: Preço unitário. Numérico. Preço do produto por unidade em libras esterlinas (Â£);
+
+-   CustomerID: Número do cliente. Nominal. Um número integral de 5 dígitos atribuído exclusivamente a cada cliente;
+
+-   Country: Nome do país. Nominal. O nome do país onde o cliente reside.
+
+------------------------------------------------------------------------
+
+### 2. Análise Exploratória das variáveis
+
+Nesta seção será explorado as variáveis para identificar os possíveis padrões e comportamentos, valores nulos, outliers e engenharia de atributos, se necessário.
+
+```{r}
+# Carregar as 10 primeiras entradas do dataset
+head(df)
+sample(df)
+```
+
+```{r}
+# Analisar as dimensões do dataset (linhas x colunas)
+dim(df)
+```
+
+```{r}
+# Verificar o nome das variáveis(colunas)
+names(df)
+```
+
+```{r}
+# Verificar o tipo das variáveis
+str(df)
+```
+
+```{r}
+# Transformando a variável "country" em factor, devido ser categórica nominal
+table(df$Country)
+df$Country <- as.factor(df$Country)
+```
+
+```{r}
+# Verificando os valores nulos das variáveis
+colSums(is.na(df))
+```
+
+-   Como trabalharemos com operações matemáticas, será necessário que as variáveis não apresentem valores nulos, bem como a dimensão da base possui 1067371 linhas, então removeremos os valores ausentes das variáveis "Description" e "Customer ID", pois não podemos inputar nenhuma informação para suprir essas ausências, visto que irá influenciar nas estatísticas de compra do cliente e portanto na análise RFM.
+
+```{r}
+# Criando uma coluna de Preço Total
+df$Total_Price <- df$Quantity * df$Price 
+head(df$Total_Price)
+```
+
+```{r}
+# Criando uma cópia do dataset original
+df_copy <- df
+```
+
+```{r}
+# Removendo os valores ausentes do dataset
+
+df_copy <- na.omit(df)
+
+# Seleciona os valores que NÃO são do tipo C na coluna "Invoice"
+df_copy <- df_copy[!grepl("C",df_copy$Invoice),]
+dim(df_copy)
+
+# Resultado final do dataset após a limpeza
+print(paste0("Foram removidas: ", 
+             dim(df)[1] - dim(df_copy)[1],
+             "(",
+             round(((dim(df)[1] - dim(df_copy)[1])/dim(df)[1]) * 100, digits = 2),
+             "%) linhas após a limpeza"))
+```
+
+```{r}
+# Verificando a disposição da variável "Total_Price"
+
+ggplot(
+  df_copy, 
+  mapping = aes(x = Total_Price)) + 
+  geom_density(fill = "#ff79ae", color = "#282a36", alpha = 3.5) + 
+  labs(title = "Distribuição da variável Total_Price")
+  
+```
+
+```{r}
+# Quantidade de transações
+length(df_copy$`Customer ID`)
+```
+
+```{r}
+# Quantidade de clientes
+length(unique(df_copy$`Customer ID`))
+```
+
+```{r}
+# Transformando em data table
+df_copy <- data.table::data.table(df_copy)
+
+# Valor Monetário por cliente
+valor_monetario <- df_copy[,.(Total = sum(Total_Price)), by = `Customer ID`][order(desc(Total))]
+print(valor_monetario)
+```
+
+```{r}
+print(summary(valor_monetario$Total))
+```
+
+```{r}
+# Cálculo da Recência
+max(df_copy$InvoiceDate)
+data_ref <- as.Date.character("25/12/2011", "%d/%m/%Y")
+
+converter_data <- function(x){
+  options(digits.secs = 3)
+  return(as.Date(as.POSIXct(x$InvoiceDate,'GMT')))
+}
+
+# Alterando a coluna InvoiceDate para ocultar o horário
+df_copy$InvoiceDate <- converter_data(df_copy)
+head(df_copy)
+```
+
+```{r}
+# Calculando o RFM
+calculo_rfm <- df_copy[,
+        .(Recencia = as.numeric(data_ref - max(InvoiceDate)),
+          Frequencia = .N,
+          Monetario = sum(Total_Price),
+          Primeira_compra = min(InvoiceDate)), 
+        by = `Customer ID`]
+
+calculo_rfm
+```
+
+```{r}
+# Removendo os Outliers (Valores muito distantes da média)
+Q1 <- quantile(calculo_rfm$Monetario, .25)
+Q3 <- quantile(calculo_rfm$Monetario, .75)
+IQR <- IQR(calculo_rfm$Monetario)
+
+calculo_rfm <- subset(
+                calculo_rfm,
+                calculo_rfm$Monetario >= (Q1 - 1.5*IQR) &
+                calculo_rfm$Monetario <= (Q3 + 1.5*IQR) 
+                                    )
+
+head(calculo_rfm)
+```
+
+------------------------------------------------------------------------
+
+### 3. Machine Learning - Clusterização Kmeans
+
+Nesta seção será criado um modelo de algoritmo não supervisionado do tipo Cluster Kmeans, na qual agrupa os dados em clusters (grupos) com base em suas características, sem a necessidade de rótulos prévios. O algoritmo tenta encontrar estruturas nos dados agrupando-os em um número pré-definido de clusters, minimizando a variação dentro de cada cluster e maximizando a variação entre os clusters.
+
+```{r}
+# Set seed
+set.seed(42)
+```
+
+```{r}
+# Cria uma lista
+resultados <- list()
+
+# Filtrando somente as colunas necessárias
+dados_rfm <- calculo_rfm %>% 
+  select(Recencia, Frequencia, Monetario)
+
+dados_rfm
+```
+
+```{r}
+# Cria o modelo e divide em 5 grupos
+# com base na distância entre os pontos
+modelo_kmeans <- kmeans(dados_rfm,
+                        centers = 5,
+                        iter.max = 50)
+```
+
+```{r include=FALSE}
+# Verificando o modelo criado
+modelo_kmeans
+```
+
+```{r}
+# Plot do modelo
+resultados$plot <- fviz_cluster(modelo_kmeans,
+                                data = dados_rfm,
+                                geom = c('point'),
+                                ellipse.type = 'euclid')
+```
+
+```{r}
+# Organiza os dados
+# Retornando os dados do ID para identificar os clientes
+dados_rfm$Customer_ID <- calculo_rfm$`Customer ID`
+dados_rfm$clusters <- modelo_kmeans$cluster
+
+
+resultados$data <- dados_rfm
+
+grafico <- resultados[1]
+grafico
+```
+
+```{r}
+tab <- as.data.frame(resultados[2])
+head(tab)
+```
+
+```{r}
+# Analisando os resultados da tabela dos cliente
+clusters_clientes <- data.table::data.table(tab)
+```
+
+```{r}
+# Frequência dos clientes por Clusters
+clusters_clientes[,
+                  .(Total = .N),
+                  by = data.clusters
+                  ][order(desc(Total))]
+```
+
+```{r}
+# Média de Recencias por clusters
+clusters_clientes[,
+                  .(Media_recencia = median(data.Recencia),
+                    Media_frequencia = median(data.Frequencia),
+                    Media_monetario = median(data.Monetario)),
+                  by = data.clusters
+                  ]
+```
+
+```{r}
+
+# Plotagem dos gráficos de RFM
+plotagem <- function(coluna){
+  
+  titulo_coluna <- substr(coluna, 6, nchar(coluna))
+  
+# Criar o boxplot com Plotly
+boxplot_plotly <- plot_ly(data = clusters_clientes, 
+                          x = ~data.clusters,
+                          y = ~get(coluna),
+                          type = "box"
+                          ) %>%
+  layout(title = paste("Boxplot de ", titulo_coluna, " por cluster"),
+         xaxis = list(title = "Cluster"),
+         yaxis = list(title = titulo_coluna))
+
+# Exibir o boxplot
+return(boxplot_plotly)
+}
+```
+
+```{r fig.width=9.5, message=FALSE, warning=FALSE}
+
+plotagem("data.Recencia")
+```
+
+```{r fig.width=9.5, message=FALSE, warning=FALSE}
+plotagem("data.Frequencia")
+```
+
+```{r fig.width=9.5, message=FALSE, warning=FALSE}
+plotagem("data.Monetario")
+```
+
+### Análise dos Clusters:
+
+-   **Recência Média:** A recência média representa o quão recentemente os clientes de um cluster realizaram uma transação. Dentro deste contexto, o cluster 5 apresenta a melhor média (menor), indicando que são possíveis usuários mais ativos e/ou engajados com a marca. Em contrapartida, o cluster 2 apresenta uma média 7 vezes maior que o cluster 5, possivelmente este grupo não está envolvido com a marca ou estão se afastando;
+
+-   **Frequência Média:** A frequência média indica com que frequência os clientes de um cluster realizam transações. O cluster 5 apresenta uma frequência média de 228, indicando clientes possivelmente fiéis e que retornam regularmente para realizarem novas compras. O cluster 2 apresenta um frequência de 19, indicando clientes menos engajados e que realizam compras de forma esporádicas;
+
+-   **Valor Monetário Médio:** O valor monetário representa o valor médio das transações realizadas pelos clientes de um cluster. O cluster 5 apresenta uma média de 4370.4, demonstrando que os clientes estão gastando mais em cada transação, o que indica maior lealdade ou interesse em serviços e nos produtos da marca.
